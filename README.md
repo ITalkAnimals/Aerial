@@ -25,10 +25,11 @@ Epic Fortnite Lobby Bot Network
 4. Upload your certificate to `/usr/local/lib/aerial/ssl/cert.pem`
 5. Upload your private key to `/usr/local/lib/aerial/ssl/key.pem`
 6. Fill out `config.example.yml` and rename it to `config.yml`
-7. `mv /usr/local/lib/aerial/aerial.service /etc/systemd/system/aerial.service`
-8. `chown -R aerial:nobody /usr/local/lib/aerial`
-9. `chmod -R 600 /usr/local/lib/aerial/`
-10. `chmod 700 /usr/local/lib/aerial /usr/local/lib/aerial/ssl`
-11. `systemctl daemon-reload`
-12. `systemctl enable aerial`
-13. If this is a node server, get the public IP from `hostname -I` and insert it into `config.yml` in the Discord bot.
+7. `pip3 install -r /usr/local/lib/aerial/requirements.txt`
+8. `mv /usr/local/lib/aerial/aerial.service /etc/systemd/system/aerial.service`
+9. `chown -R aerial:nobody /usr/local/lib/aerial`
+10. `chmod -R 600 /usr/local/lib/aerial/`
+11. `chmod 700 /usr/local/lib/aerial /usr/local/lib/aerial/ssl`
+12. `systemctl daemon-reload`
+13. `systemctl enable aerial`
+14. If this is a node server, get the public IP from `hostname -I` and insert it into `config.yml` in the Discord bot.
