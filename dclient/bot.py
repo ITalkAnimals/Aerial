@@ -1,3 +1,4 @@
+#!/usr/bin/python3
 import discord
 import asyncio
 import ssl
@@ -6,6 +7,9 @@ import json
 import requests
 import logging as log
 import handle
+import socket
+from random import shuffle
+from sys import exc_info as exc
 from yaml import safe_load
 from mysql.connector import connect as dbconnect
 from discord.ext import commands
@@ -20,6 +24,7 @@ client = commands.AutoShardedBot(
     case_insensitive=True,
     help_command=None,
 )
+can_start = True
 db = dbconnect(
     host=config["Database"]["Host"],
     port=config["Database"]["Port"],
@@ -65,45 +70,109 @@ async def is_boosting(id: int):
 
 # Main WebSocket Handler
 async def wsconnect(user):
+
     try:
         accmsg = await user.send(
             embed=discord.Embed(
                 title="<a:Loading:719025775042494505> Starting Bot...",
+                description="Looking for an available node...",
                 color=0x7289DA,
             )
         )
     except discord.Forbidden:
         return
-    async with websockets.connect(config["WSHost"], ssl=cert) as ws:
-        if active.get(user.id, None) is None:
-            active[user.id] = [ws]
-        else:
-            active[user.id].append(ws)
-        asyncio.get_event_loop().create_task(wswait(accmsg))
-        try:
-            async for message in ws:
-                cmd = json.loads(message)
-                if cmd["type"] == "account_info":
-                    r = requests.get(
-                        "https://benbotfn.tk/api/v1/cosmetics/br/" + cmd["outfit"]
-                    )
-                    img = r.json().get("icons", {}).get("icon", "")
-                    await accmsg.edit(
-                        embed=discord.Embed(
-                            title="<:Online:719038976677380138> " + cmd["username"],
-                            color=0xFC5FE2,
+
+    if not can_start:
+        await accmsg.edit(
+            embed=discord.Embed(
+                title=":x: Bot Creation is Disabled",
+                description="Bot creation has been temporarily disabled.\nThis is most likely due to an update.",
+                color=0xE46B6B,
+            ),
+            delete_after=10,
+        )
+        return
+
+    shuffle(config["Nodes"])
+    for node in config["Nodes"]:
+        await accmsg.edit(
+            embed=discord.Embed(
+                title="<a:Loading:719025775042494505> Starting Bot...",
+                description=f"Attempting to connect to `{node}`...",
+                color=0x7289DA,
+            )
+        )
+
+        # Check to see if port is open, i.e. server is up
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        await asyncio.sleep(2)
+        if s.connect_ex((node, 8765)) != 0:
+            s.close()
+            continue
+        s.close()
+
+        # Connect to the server
+        async with websockets.connect(
+            f"wss://{node}:8765", ssl=cert, ping_interval=10, ping_timeout=10
+        ) as ws:
+
+            try:
+                async for message in ws:
+                    cmd = json.loads(message)
+    
+                    if cmd["type"] == "no_free_accounts":
+                        continue
+    
+                    elif cmd["type"] == "account_info":
+                        active[user.id] = [ws]
+                        img = requests.get(
+                            "https://benbotfn.tk/api/v1/cosmetics/br/" + cmd["outfit"]
+                        ).json().get("icons", {}).get("icon", "")
+                        await accmsg.edit(
+                            embed=discord.Embed(
+                                title="<:Online:719038976677380138> " + cmd["username"],
+                                color=0xFC5FE2,
+                            )
+                            .set_thumbnail(url=img)
+                            .add_field(
+                                name="Discord Server",
+                                value="https://discord.gg/fn8UfRY",
+                            )
+                            .add_field(
+                                name="Documentation", value="https://aerial.now.sh/"
+                            )
                         )
-                        .set_thumbnail(url=img)
-                        .add_field(
-                            name="Discord Server", value="https://discord.gg/fn8UfRY"
+    
+                    elif cmd["type"] == "shutdown":
+                        await accmsg.edit(
+                            embed=discord.Embed(
+                                title="<:Offline:719321200098017330> Bot Offline",
+                                description=cmd["content"],
+                                color=0x747F8D,
+                            )
                         )
-                        .add_field(name="Documentation", value="https://aerial.now.sh/")
-                    )
-                elif cmd["type"] == "shutdown":
+                        active.get(user.id, []).remove(ws)
+                        if active.get(user.id, []) == []:
+                            active.pop(user.id, None)
+                        return
+    
+                    elif cmd["type"] == "fail" or cmd["type"] == "success":
+                        await handle.feedback(cmd, user)
+    
+                    elif cmd["type"] == "incoming_fr" or cmd["type"] == "incoming_pi":
+                        await handle.incoming(cmd, user, client, ws)
+    
+                    else:
+                        await user.send("```json\n" + json.dumps(cmd) + "```")
+
+            except websockets.exceptions.ConnectionClosedError:
+                if active.get(user.id, None) is None:
+                    continue
+                else:
                     await accmsg.edit(
                         embed=discord.Embed(
                             title="<:Offline:719321200098017330> Bot Offline",
-                            description=cmd["content"],
+                            description="The WebSocket connection was lost.",
                             color=0x747F8D,
                         )
                     )
@@ -111,25 +180,34 @@ async def wsconnect(user):
                     if active.get(user.id, []) == []:
                         active.pop(user.id, None)
                     return
-                elif cmd["type"] == "fail" or cmd["type"] == "success":
-                    await handle.feedback(cmd, user)
-                elif cmd["type"] == "incoming_fr" or cmd["type"] == "incoming_pi":
-                    await handle.incoming(cmd, user, client, ws)
+
+            except websockets.exceptions.ConnectionClosedOK:
+                if active.get(user.id, None) is None:
+                    continue
                 else:
-                    await user.send("```json\n" + json.dumps(cmd) + "```")
-        except websockets.exceptions.ConnectionClosedError:
-            pass
+                    await accmsg.edit(
+                        embed=discord.Embed(
+                            title="<:Offline:719321200098017330> Bot Offline",
+                            description="The WebSocket connection was lost.",
+                            color=0x747F8D,
+                        )
+                    )
+                    active.get(user.id, []).remove(ws)
+                    if active.get(user.id, []) == []:
+                        active.pop(user.id, None)
+                    return
+
+            except:
+                pass
+
     await accmsg.edit(
         embed=discord.Embed(
-            title="<:Offline:719321200098017330> Bot Offline",
-            description="The WebSocket connection was lost.",
-            color=0x747F8D,
-        )
+            title=":x: No Free Accounts",
+            description="There are currently no free accounts available.\nPlease try again later.",
+            color=0xE46B6B,
+        ),
+        delete_after=10,
     )
-    active.get(user.id, []).remove(ws)
-    if active.get(user.id, []) == []:
-        active.pop(user.id, None)
-    return
 
 
 @client.event
@@ -138,8 +216,11 @@ async def on_message(message: discord.Message):
         message.author.id in list(active.keys())
     ):
         for ws in active[message.author.id]:
-            await handle.command(message, ws)
-    elif message.channel.id == 718979003968520283 and "start" in message.content:
+            try:
+                await handle.command(message, ws)
+            except:
+                pass
+    elif message.channel.id == 718979003968520283 and "start" in message.content.lower():
         if message.author.id in list(active.keys()):
             await message.author.send(
                 embed=discord.Embed(title=":x: Bot Already Running!", color=0xE46B6B),
@@ -168,17 +249,63 @@ async def start(ctx):
 
 
 @client.command(aliases=["stop"])
-async def kill(ctx):
-    if ctx.message.author.id in list(active.keys()):
-        for ws in active[ctx.message.author.id]:
-            await ws.send(json.dumps({"type": "stop"}))
-        await ctx.channel.send(
-            f"<:Accept:719047548219949136> {ctx.message.author.mention} Sent shutdown request to bot!"
+async def kill(ctx, user: discord.User = None):
+    if ctx.message.author.id == 406856161015627835 and user is not None:
+        for ws in list(active.get(ctx.message.author.id, [])):
+            active[user.id].remove(ws)
+            try:
+                await ws.send(json.dumps({"type": "stop"}))
+            except:
+                pass
+        await ctx.send(f"<:Accept:719047548219949136> {user.mention} Stopped Session!")
+        if active[user.id] == []:
+            active.pop(user.id, None)
+    elif ctx.message.author.id in list(active.keys()):
+        for ws in list(active.get(ctx.message.author.id, [])):
+            active[ctx.message.author.id].remove(ws)
+            try:
+                await ws.send(json.dumps({"type": "stop"}))
+            except:
+                pass
+        await ctx.send(
+            f"<:Accept:719047548219949136> {ctx.message.author.mention} Stopped Session!"
         )
+        if active[ctx.message.author.id] == []:
+            active.pop(ctx.message.author.id, None)
     else:
-        await ctx.channel.send(
+        await ctx.send(
             f"<:Reject:719047548819472446> {ctx.message.author.mention} You do not have an active bot! Type `a.start` to create one!"
         )
+
+
+@client.command(hidden=True)
+async def disable(ctx):
+    global can_start
+    if ctx.message.author.id == 406856161015627835:
+        can_start = False
+
+
+@client.command(hidden=True)
+async def enable(ctx):
+    global can_start
+    if ctx.message.author.id == 406856161015627835:
+        can_start = True
+
+
+@client.command(hidden=True)
+async def killall(ctx):
+    if ctx.message.author.id == 406856161015627835:
+        for u in list(active.keys()):
+            await u.send(":stop_sign: This bot has been stopped.")
+            for ws in active[u]:
+                await ws.close()
+
+
+@client.command(hidden=True)
+async def sendall(ctx, *, message: str):
+    if ctx.message.author.id == 406856161015627835:
+        for u in list(active.keys()):
+            await u.send(message)
 
 
 @client.command()
@@ -237,7 +364,6 @@ async def on_shard_ready(shard_id: int):
 
 if __name__ == "__main__":
     client.run(config["Token"])
-    users = list(active.values())
-    for u in users:
+    for u in list(active.keys()):
         for ws in active[u]:
             asyncio.get_event_loop().create_task(ws.close())

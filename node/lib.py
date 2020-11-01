@@ -14,7 +14,7 @@ class Client(fortnitepy.Client):
 
         super().__init__(
             auth=fortnitepy.DeviceAuth(**details),
-            build="++Fortnite+Release-14.10-CL-14276912-Windows",
+            build="1:2:",
         )
 
     async def cleanup(self):
@@ -40,8 +40,8 @@ class Client(fortnitepy.Client):
                 partial(self.party.me.set_backpack, "BID_122_HalloweenTomato"),
                 partial(
                     self.party.me.set_banner,
-                    icon="otherbanner31",
-                    color="defaultcolor3",
+                    icon="BRSkirmishBushBandits",
+                    color="defaultcolor18",
                     season_level=1337,
                 ),
             )
@@ -91,18 +91,18 @@ class Client(fortnitepy.Client):
     async def refresh_hidden(self):
         if not self.party.me.leader:
             return
-        elif self.party_hidden:
-            new = self.party.meta.set_squad_assignments(
-                [{"memberId": seld.user.id, "absoluteMemberIdx": 0}]
-            )
-            await seld.party.patch(updated=new)
-        else:
-            members = []
-            for user in self.party.meta.squad_assignments:
-                if user["memberId"] not in self.hidden:
-                    members.append(user)
-            new = self.party.meta.set_squad_assignments(members)
-            await self.party.patch(updated=new)
+        assignments = []
+        for i in range(0, len(self.party.members)):
+            member = self.party.members[i]
+            if member.id == self.user.id:
+                assignments.append({"memberId": self.user.id, "absoluteMemberIdx": i})
+            elif (member.id not in self.hidden) and (not self.party_hidden):
+                assignments.append({"memberId": member.id, "absoluteMemberIdx": i})
+        data = self.party.meta.set_squad_assignments(assignments)
+        try:
+            await self.party.patch(updated=data)
+        except:
+            pass
 
     async def event_party_member_join(self, member: fortnitepy.PartyMember):
         await self.refresh_hidden()
@@ -201,7 +201,7 @@ async def process(bot: Client, cmd: dict):
                 )
             )
             return
-        user.remove()
+        await user.remove()
         await bot.ws.send(
             json.dumps(
                 {"type": "success", "action": "del_f", "username": cmd["username"]}
@@ -282,11 +282,6 @@ async def process(bot: Client, cmd: dict):
                 variants=user.outfit_variants,
             ),
             partial(
-                bot.party.me.set_backpack,
-                asset=user.backpack,
-                variants=user.backpack_variants,
-            ),
-            partial(
                 bot.party.me.set_pickaxe,
                 asset=user.pickaxe,
                 variants=user.pickaxe_variants,
@@ -305,6 +300,16 @@ async def process(bot: Client, cmd: dict):
                 friend_boost_xp=user.battlepass_info[3],
             ),
         )
+        if user.backpack is not None:
+            await bot.party.me.edit_and_keep(
+                partial(
+                    bot.party.me.set_backpack,
+                    asset=user.backpack,
+                    variants=user.backpack_variants,
+                ),
+            )
+        else:
+            await bot.party.me.clear_backpack()
         await bot.ws.send(
             json.dumps(
                 {"type": "success", "action": "clone", "username": cmd["username"]}
@@ -435,6 +440,7 @@ async def process(bot: Client, cmd: dict):
             await bot.party.send(cmd["content"])
         elif not bot.party.me.leader:
             await bot.ws.send(json.dumps({"type": "fail", "reason": "not_leader"}))
+            return
         elif cmd["action"] == "hide":
             if cmd.get("username", None) is None:
                 bot.party_hidden = True

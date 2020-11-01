@@ -4,18 +4,20 @@ import asyncio
 import ssl
 import logging as log
 import lib
+from sys import exc_info as exc
 from yaml import safe_load
 from mysql.connector import connect as dbconnect
 
 log.basicConfig(
-    filename="wshost.log",
-    format="WSHost @ %(asctime)s | %(levelname)s %(message)s",
+    filename="node.log",
+    format="Node @ %(asctime)s | %(levelname)s %(message)s",
     datefmt="%H:%M:%S",
     level=log.INFO,
 )
 
 loop = asyncio.get_event_loop()
 config = safe_load(open("config.yml", "r"))
+count = 0
 db = dbconnect(
     host=config["Database"]["Host"],
     port=config["Database"]["Port"],
@@ -32,6 +34,7 @@ del c
 
 # Main WebSocket Handler
 async def wshandle(ws, path):
+    global count
     if ws.remote_address[0] not in config["Allowed_IPs"]:
         log.warning("Denied WebSocket Connection from " + ws.remote_address[0])
         await ws.close(code=4000, reason="Unauthorized")
@@ -42,18 +45,12 @@ async def wshandle(ws, path):
         """SELECT * FROM `accounts` WHERE `in_use` = '0' ORDER BY RAND() LIMIT 1;"""
     )
     details = c.fetchone()
-    if details is None:
-        await ws.send(
-            json.dumps(
-                {
-                    "type": "shutdown",
-                    "content": "There are no free accounts available. Please try again later.",
-                }
-            )
-        )
+    if details is None or count >= 120:
+        await ws.send(json.dumps({"type": "no_free_accounts"}))
         log.info("Closed WebSocket Connection - No Free Accounts")
         await ws.close(code=1000, reason="No Free Accounts")
         return
+    count = count + 1
     c.execute(
         """UPDATE `accounts` SET `in_use` = '1' WHERE `id` = '%s';""" % details[0]
     )
@@ -81,8 +78,13 @@ async def wshandle(ws, path):
     try:
         async for message in ws:
             log.info(f"Received Message for {details[0]}: {message}")
-            await lib.process(bot, json.loads(message))
-    except websockets.exceptions.ConnectionClosedError:
+            try:
+                await lib.process(bot, json.loads(message))
+            except:
+                log.error(
+                    f"Exception Whilst Processing for {details[0]}: {exc()[0]} {exc()[1]} {exc()[2]}"
+                )
+    except:
         pass
     log.info("Closed WebSocket Connection")
     log.info(f"Shutting Down Account {details[0]}")
@@ -92,7 +94,11 @@ async def wshandle(ws, path):
     )
     db.commit()
     c.close()
+    count = count - 1
     log.info(f"Freed Account {details[0]}")
+    del details
+    del bot
+    del c
 
 
 async def start():
@@ -103,6 +109,8 @@ async def start():
         ssl=ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER).load_cert_chain(
             certfile="ssl/cert.pem", keyfile="ssl/key.pem"
         ),
+        ping_interval=10,
+        ping_timeout=10
     )
 
 
