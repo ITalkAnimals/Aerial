@@ -4,3 +4,5 @@ Database:
   Port: 3306
   Username: "example"
   Password: "Password1"
+  Pool_Start: 0
+  Pool_End: 119

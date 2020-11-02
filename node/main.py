@@ -17,7 +17,6 @@ log.basicConfig(
 
 loop = asyncio.get_event_loop()
 config = safe_load(open("config.yml", "r"))
-count = 0
 db = dbconnect(
     host=config["Database"]["Host"],
     port=config["Database"]["Port"],
@@ -27,14 +26,16 @@ db = dbconnect(
 )
 db.autocommit = True
 c = db.cursor()
-c.execute("""UPDATE `accounts` SET `in_use` = '0';""")
+c.execute(
+    """UPDATE `accounts` SET `in_use` = '0' WHERE `id` >= '%s' AND `id` <= '%s';"""
+    % (config["Database"]["Pool_Start"], config["Database"]["Pool_End"])
+)
 c.close()
 del c
 
 
 # Main WebSocket Handler
 async def wshandle(ws, path):
-    global count
     if ws.remote_address[0] not in config["Allowed_IPs"]:
         log.warning("Denied WebSocket Connection from " + ws.remote_address[0])
         await ws.close(code=4000, reason="Unauthorized")
@@ -42,15 +43,15 @@ async def wshandle(ws, path):
     log.info("Established WebSocket Connection")
     c = db.cursor()
     c.execute(
-        """SELECT * FROM `accounts` WHERE `in_use` = '0' ORDER BY RAND() LIMIT 1;"""
+        """SELECT * FROM `accounts` WHERE `in_use` = '0' AND `id` >= '%s' AND `id` <= '%s' ORDER BY RAND() LIMIT 1;"""
+        % (config["Database"]["Pool_Start"], config["Database"]["Pool_End"])
     )
     details = c.fetchone()
-    if details is None or count >= 120:
+    if details is None:
         await ws.send(json.dumps({"type": "no_free_accounts"}))
         log.info("Closed WebSocket Connection - No Free Accounts")
         await ws.close(code=1000, reason="No Free Accounts")
         return
-    count = count + 1
     c.execute(
         """UPDATE `accounts` SET `in_use` = '1' WHERE `id` = '%s';""" % details[0]
     )
@@ -94,7 +95,6 @@ async def wshandle(ws, path):
     )
     db.commit()
     c.close()
-    count = count - 1
     log.info(f"Freed Account {details[0]}")
     del details
     del bot

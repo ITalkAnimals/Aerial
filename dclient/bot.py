@@ -40,6 +40,7 @@ log.basicConfig(
     level=log.INFO,
 )
 
+
 # Check WebSocket Connection
 async def wswait(accmsg: discord.Message):
     await asyncio.sleep(10)
@@ -296,7 +297,8 @@ async def enable(ctx):
 async def killall(ctx):
     if ctx.message.author.id == 406856161015627835:
         for u in list(active.keys()):
-            await u.send(":stop_sign: This bot has been stopped.")
+            user = client.get_user(u)
+            await user.send(":stop_sign: This bot has been stopped.")
             for ws in active[u]:
                 await ws.close()
 
@@ -305,7 +307,8 @@ async def killall(ctx):
 async def sendall(ctx, *, message: str):
     if ctx.message.author.id == 406856161015627835:
         for u in list(active.keys()):
-            await u.send(message)
+            user = client.get_user(u)
+            await user.send(message)
 
 
 @client.command()
