@@ -1,0 +1,20 @@
+# Fill in this file and rename it to "config.yml".
+Account1: # This is the Account ID. Change it to what you want, useful for console debugging.
+  Email: fortnite@example.com
+  Cosmetics:
+    Outfit: CID_565_Athena_Commando_F_RockClimber # Cosmetics only accept IDs, not names.
+    Backbling: BID_122_HalloweenTomato
+    Harvesting Tool: Pickaxe_ID_263_JonesyCube
+    Banner:
+      Icon: otherbanner31 # Again, only IDs.
+      Color: defaultcolor3
+      Season Level: 1337 # The level that shows up above the banner.
+    Battle Pass:
+      Purchased: true # Changes the lighting under the bot from blue to gold on hover.
+      Level: 1337
+      Self Boost XP: 100 # This has no effect in-game. This is only visual.
+      Friend Boost XP: 100 # Same as above.
+    Avatar: CID_565_Athena_Commando_F_RockClimber # The avatar that shows up next to the name in the friend list.
+  Account ID: automagically-filled # These are automagically filled. Only change this if you know what you are doing.
+  Device ID: automagically-filled
+  Secret: automagically-filled
