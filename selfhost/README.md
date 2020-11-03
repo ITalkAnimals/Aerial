@@ -7,7 +7,8 @@
 
 ## Extensions
 
-Extensions can be either in the form of a single file or in the form of a folder.
+Extensions can be either in the form of a single file or in the form of a folder.  
+These are mostly [FortnitePy Extensions](https://fortnitepy.readthedocs.io/en/latest/ext/commands/extensions.html), but with a few extra requirements.
 
 ### Simple / Single File
 
